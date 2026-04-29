@@ -1,0 +1,17 @@
+{
+  "name": "Luma",
+  "version": "0.3.21",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "improv": false,
+      "parts": [
+        {
+          "path": "merged-flash.bin",
+          "offset": 0
+        }
+      ]
+    }
+  ]
+}

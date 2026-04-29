@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<!--
+  Source for the public flash page (https://honear.github.io/luma/).
+  Pushed to honear/luma main by .github/workflows/mirror-release-to-luma.yml
+  on every release. The manifest's ?v= cache-bust query is rewritten by the
+  workflow to the release tag so old manifest.json copies aren't reused.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Luma — USB flash (recovery)</title>
+    <style>
+      :root {
+        --esp-tools-button-color: #2563eb;
+        --esp-tools-button-text-color: #ffffff;
+        --esp-tools-button-border-radius: 8px;
+      }
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 40rem;
+        margin: 2rem auto;
+        padding: 0 1rem;
+        line-height: 1.5;
+        color: #1a1a1a;
+      }
+      h1 {
+        font-size: 1.35rem;
+      }
+      ol {
+        padding-left: 1.25rem;
+      }
+      .note {
+        font-size: 0.9rem;
+        color: #444;
+        margin-top: 2rem;
+      }
+    </style>
+    <script
+      type="module"
+      src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"
+    ></script>
+  </head>
+  <body>
+    <h1>Luma — full USB flash</h1>
+    <p>
+      Use this page on a desktop with
+      <strong>Chrome</strong> or <strong>Edge</strong> (Web Serial). Connect
+      your ESP32-S3 board with a data-capable USB cable.
+    </p>
+    <ol>
+      <li>
+        Put the device in <strong>download mode</strong> (typical DevKit: hold
+        <kbd>BOOT</kbd>, tap <kbd>RESET</kbd>, release <kbd>BOOT</kbd>). If the
+        board looks “bricked,” this still works: the ROM bootloader in mask ROM
+        is intact—only the flash bootloader or app may be wrong.
+      </li>
+      <li>Click the button below and choose the serial port.</li>
+      <li>Allow a <strong>full erase</strong> when asked if this is a new install or recovery.</li>
+    </ol>
+
+    <esp-web-install-button manifest="./manifest.json?v=0.3.21">
+      <button slot="activate">Install firmware</button>
+      <span slot="unsupported"
+        >Use Chrome or Edge on a desktop. Web Serial is not available in this
+        browser.</span
+      >
+      <span slot="not-allowed"
+        >Open this page over HTTPS (required for Web Serial).</span
+      >
+    </esp-web-install-button>
+
+    <p class="note">
+      After flashing, the device can use normal Wi‑Fi / OTA updates. This page
+      is only for hardware that never had OTA or needs a clean recovery.
+    </p>
+  </body>
+</html>
