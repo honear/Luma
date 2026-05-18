@@ -52,6 +52,65 @@
         font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
           "Liberation Mono", "Courier New", monospace;
       }
+      .console-card {
+        margin-top: 1.5rem;
+        padding: 1rem;
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        background: #f9fafb;
+      }
+      .console-card h2 {
+        font-size: 1rem;
+        margin: 0 0 0.35rem;
+      }
+      .console-card p {
+        margin: 0 0 0.75rem;
+        font-size: 0.9rem;
+        color: #444;
+      }
+      .console-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin: 0.5rem 0;
+      }
+      .console-row input {
+        flex: 1 1 12rem;
+        min-width: 0;
+        padding: 0.55rem 0.65rem;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        font: inherit;
+      }
+      .console-card button {
+        padding: 0.55rem 0.75rem;
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        background: #fff;
+        cursor: pointer;
+      }
+      .console-card button.primary {
+        background: #2563eb;
+        border-color: #2563eb;
+        color: #fff;
+      }
+      .console-card button:disabled {
+        cursor: not-allowed;
+        opacity: 0.55;
+      }
+      #serial-log {
+        min-height: 10rem;
+        max-height: 18rem;
+        overflow: auto;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        padding: 0.75rem;
+        border-radius: 8px;
+        background: #0f172a;
+        color: #d1fae5;
+        font: 0.82rem ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          "Liberation Mono", "Courier New", monospace;
+      }
     </style>
     <script
       type="module"
@@ -81,7 +140,7 @@
       <span id="firmware-version">Checking…</span>
     </div>
 
-    <esp-web-install-button manifest="./manifest.json?v=0.3.34">
+    <esp-web-install-button manifest="./manifest.json?v=0.3.35">
       <button slot="activate">Install firmware</button>
       <span slot="unsupported"
         >Use Chrome or Edge on a desktop. Web Serial is not available in this
@@ -92,6 +151,38 @@
       >
     </esp-web-install-button>
 
+    <section class="console-card">
+      <h2>USB diagnostic console</h2>
+      <p>
+        After flashing, click <strong>Connect console</strong>, choose the
+        Luma serial port, then use commands like <code>version</code>,
+        <code>status</code>, <code>net</code>, or <code>setup</code>.
+      </p>
+      <div class="console-row">
+        <button class="primary" id="serial-connect">Connect console</button>
+        <button id="serial-reset" disabled>Reset device</button>
+        <button id="serial-disconnect" disabled>Disconnect</button>
+      </div>
+      <div class="console-row">
+        <button data-command="version" disabled>version</button>
+        <button data-command="status" disabled>status</button>
+        <button data-command="net" disabled>net</button>
+        <button data-command="setup" disabled>setup</button>
+        <button data-command="help" disabled>help</button>
+      </div>
+      <div class="console-row">
+        <input
+          id="serial-command"
+          type="text"
+          placeholder="Type a command, e.g. status"
+          autocomplete="off"
+          disabled
+        />
+        <button id="serial-send" disabled>Send</button>
+      </div>
+      <pre id="serial-log">Console not connected.</pre>
+    </section>
+
     <p class="note">
       After flashing, the device can use normal Wi‑Fi / OTA updates. This page
       is only for hardware that never had OTA or needs a clean recovery.
@@ -100,7 +191,7 @@
       (async () => {
         const versionEl = document.getElementById("firmware-version");
         try {
-          const response = await fetch("./manifest.json?v=0.3.34", {
+          const response = await fetch("./manifest.json?v=0.3.35", {
             cache: "no-store",
           });
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -112,6 +203,131 @@
           versionEl.textContent = "Could not check version";
           console.warn("Failed to load firmware manifest", error);
         }
+      })();
+
+      (() => {
+        const connectBtn = document.getElementById("serial-connect");
+        const disconnectBtn = document.getElementById("serial-disconnect");
+        const resetBtn = document.getElementById("serial-reset");
+        const sendBtn = document.getElementById("serial-send");
+        const commandInput = document.getElementById("serial-command");
+        const logEl = document.getElementById("serial-log");
+        const quickButtons = Array.from(
+          document.querySelectorAll("[data-command]")
+        );
+
+        let port;
+        let reader;
+        let writer;
+        let keepReading = false;
+        const decoder = new TextDecoder();
+        const encoder = new TextEncoder();
+
+        function appendLog(text) {
+          if (logEl.textContent === "Console not connected.") {
+            logEl.textContent = "";
+          }
+          logEl.textContent += text;
+          logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function setConnected(connected) {
+          connectBtn.disabled = connected;
+          disconnectBtn.disabled = !connected;
+          resetBtn.disabled = !connected;
+          sendBtn.disabled = !connected;
+          commandInput.disabled = !connected;
+          quickButtons.forEach((button) => (button.disabled = !connected));
+        }
+
+        async function readLoop() {
+          keepReading = true;
+          while (port?.readable && keepReading) {
+            reader = port.readable.getReader();
+            try {
+              while (keepReading) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                if (value) appendLog(decoder.decode(value, { stream: true }));
+              }
+            } catch (error) {
+              appendLog(`\n[page] Serial read error: ${error.message}\n`);
+            } finally {
+              reader.releaseLock();
+              reader = undefined;
+            }
+          }
+        }
+
+        async function sendCommand(command) {
+          const trimmed = command.trim();
+          if (!trimmed || !writer) return;
+          appendLog(`\n> ${trimmed}\n`);
+          await writer.write(encoder.encode(`${trimmed}\n`));
+        }
+
+        connectBtn.addEventListener("click", async () => {
+          if (!("serial" in navigator)) {
+            appendLog("\n[page] Web Serial is not available in this browser.\n");
+            return;
+          }
+          try {
+            port = await navigator.serial.requestPort();
+            await port.open({ baudRate: 115200 });
+            writer = port.writable.getWriter();
+            setConnected(true);
+            logEl.textContent = "[page] Console connected at 115200 baud.\n";
+            readLoop();
+          } catch (error) {
+            appendLog(`\n[page] Could not open serial console: ${error.message}\n`);
+          }
+        });
+
+        disconnectBtn.addEventListener("click", async () => {
+          try {
+            keepReading = false;
+            await reader?.cancel();
+            writer?.releaseLock();
+            writer = undefined;
+            await port?.close();
+          } catch (error) {
+            appendLog(`\n[page] Disconnect error: ${error.message}\n`);
+          } finally {
+            port = undefined;
+            setConnected(false);
+            appendLog("\n[page] Console disconnected.\n");
+          }
+        });
+
+        resetBtn.addEventListener("click", async () => {
+          if (!port) return;
+          appendLog("\n[page] Resetting device...\n");
+          try {
+            await port.setSignals({ dataTerminalReady: false, requestToSend: true });
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            await port.setSignals({ dataTerminalReady: true, requestToSend: false });
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            await port.setSignals({ dataTerminalReady: false, requestToSend: false });
+          } catch (error) {
+            appendLog(`\n[page] Reset signal failed: ${error.message}\n`);
+          }
+        });
+
+        sendBtn.addEventListener("click", () => {
+          sendCommand(commandInput.value);
+          commandInput.value = "";
+        });
+
+        commandInput.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            sendBtn.click();
+          }
+        });
+
+        quickButtons.forEach((button) => {
+          button.addEventListener("click", () => sendCommand(button.dataset.command));
+        });
       })();
     </script>
   </body>
